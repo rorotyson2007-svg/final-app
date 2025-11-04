@@ -9,7 +9,7 @@ import re
 # Try optional imports (fail gracefully)
 _pdf_readers = {}
 
-# 1) Try PyPDF2 (older name)
+# 1) Try PyPDF2
 try:
     from PyPDF2 import PdfReader as PyPDF2_Reader
     _pdf_readers['PyPDF2'] = True
@@ -37,42 +37,39 @@ try:
 except Exception:
     _pdf_readers['pdfplumber'] = False
 
-# Document reader for .docx
+# DOCX support
 try:
     import docx
     _docx_available = True
 except Exception:
     _docx_available = False
 
-# PDF writer (report) - fpdf is usually available; handle if not
+# PDF writer
 try:
     from fpdf import FPDF
     _fpdf_available = True
 except Exception:
     _fpdf_available = False
 
-# Utilities
+
 def _safe_text(obj):
-    """Ensure we return a str; None -> ''"""
     return obj or ""
 
+
 def sanitize_for_fpdf(s: str) -> str:
-    """Replace known problematic unicode characters for old FPDF fonts."""
     if not s:
         return ""
     return (s.replace("—", "-")
-             .replace("–", "-")
-             .replace("•", "-")
-             .replace("’", "'")
-             .replace("“", '"')
-             .replace("”", '"')
-             .replace("\u2013", "-")
-             .replace("\u2022", "-"))
+            .replace("–", "-")
+            .replace("•", "-")
+            .replace("’", "'")
+            .replace("“", '"')
+            .replace("”", '"')
+            .replace("\u2013", "-")
+            .replace("\u2022", "-"))
 
-# PDF extraction functions: try available libs in order
+
 def extract_text_pdf_bytes(file_like) -> str:
-    """Attempt to extract text from PDF bytes using any available reader."""
-    # Ensure we can read multiple times
     try:
         file_like.seek(0)
     except Exception:
@@ -106,7 +103,7 @@ def extract_text_pdf_bytes(file_like) -> str:
         except Exception:
             pass
 
-    # fitz / PyMuPDF
+    # fitz
     if _pdf_readers.get('fitz'):
         try:
             file_like.seek(0)
@@ -131,20 +128,18 @@ def extract_text_pdf_bytes(file_like) -> str:
         except Exception:
             pass
 
-    # If we reach here, no PDF extraction lib worked
     return ""
 
-# DOCX extraction
+
 def extract_text_docx_bytes(file_like) -> str:
     try:
         file_like.seek(0)
-        doc = docx.Document(file_like)
-        paragraphs = [p.text for p in doc.paragraphs if p.text]
-        return "\n".join(paragraphs)
+        d = docx.Document(file_like)
+        return "\n".join(p.text for p in d.paragraphs if p.text)
     except Exception:
         return ""
 
-# TXT extraction
+
 def extract_text_txt_bytes(file_like) -> str:
     try:
         file_like.seek(0)
@@ -158,11 +153,12 @@ def extract_text_txt_bytes(file_like) -> str:
     except Exception:
         return ""
 
-# Resume processing (simple, robust)
+
 REQUIRED_SKILLS = [
     "typing", "data entry", "ms word", "excel", "internet browsing",
     "detail oriented", "organized", "communication", "time management"
 ]
+
 
 def clean_and_normalize(s: str) -> str:
     s = _safe_text(s)
@@ -170,23 +166,22 @@ def clean_and_normalize(s: str) -> str:
     s = re.sub(r'\s+', ' ', s)
     return s.strip().lower()
 
-def get_found_missing(resume_text: str):
-    resume_text = clean_and_normalize(resume_text)
-    found = []
-    missing = []
+
+def get_found_missing(text: str):
+    text = clean_and_normalize(text)
+    found, missing = [], []
     for skill in REQUIRED_SKILLS:
-        if skill in resume_text:
+        if skill in text:
             found.append(skill)
         else:
             missing.append(skill)
     match_pct = int((len(found) / len(REQUIRED_SKILLS)) * 100)
     return found, missing, match_pct
 
-# PDF report generation with safe fallback
-def make_pdf_bytes(candidate_name: str, match_pct: float, found, missing, summary, recommendations):
-    # sanitize strings for FPDF if used
+
+def make_pdf_bytes(name, match_pct, found, missing, summary, recs):
     summary = sanitize_for_fpdf(summary)
-    recommendations = sanitize_for_fpdf(recommendations)
+    recs = sanitize_for_fpdf(recs)
 
     if _fpdf_available:
         pdf = FPDF()
@@ -195,71 +190,57 @@ def make_pdf_bytes(candidate_name: str, match_pct: float, found, missing, summar
         pdf.set_font("Arial", size=12)
 
         pdf.cell(0, 8, "Resume Screening Report", ln=True)
-        pdf.cell(0, 7, f"Candidate: {candidate_name}", ln=True)
-        pdf.cell(0, 7, f"Match Score: {match_pct:.1f}%", ln=True)
-        pdf.ln(4)
+        pdf.cell(0, 8, f"Candidate: {name}", ln=True)
+        pdf.cell(0, 8, f"Match Score: {match_pct}%", ln=True)
+        pdf.ln(5)
 
         pdf.cell(0, 7, "Found Skills:", ln=True)
-        if found:
-            for s in found:
-                pdf.cell(0, 6, f"- {sanitize_for_fpdf(s)}", ln=True)
-        else:
-            pdf.cell(0, 6, "- None detected", ln=True)
+        for s in found or ["None"]:
+            pdf.cell(0, 6, f"- {s}", ln=True)
 
         pdf.ln(3)
         pdf.cell(0, 7, "Missing Skills:", ln=True)
-        if missing:
-            for s in missing:
-                pdf.cell(0, 6, f"- {sanitize_for_fpdf(s)}", ln=True)
-        else:
-            pdf.cell(0, 6, "- None", ln=True)
+        for s in missing or ["None"]:
+            pdf.cell(0, 6, f"- {s}", ln=True)
 
-        pdf.ln(4)
+        pdf.ln(3)
         pdf.multi_cell(0, 6, "Summary:\n" + summary)
         pdf.ln(2)
-        pdf.multi_cell(0, 6, "Recommendations:\n" + recommendations)
+        pdf.multi_cell(0, 6, "Recommendations:\n" + recs)
 
         out = pdf.output(dest="S")
         if isinstance(out, str):
             out = out.encode("latin-1", errors="replace")
         return out
 
-    # If FPDF not available, return a text file bytes
-    txt = []
-    txt.append("Resume Screening Report")
-    txt.append(f"Candidate: {candidate_name}")
-    txt.append(f"Match Score: {match_pct:.1f}%")
-    txt.append("")
-    txt.append("Found Skills:")
-    txt.extend([f"- {s}" for s in found] or ["- None"])
-    txt.append("")
-    txt.append("Missing Skills:")
-    txt.extend([f"- {s}" for s in missing] or ["- None"])
-    txt.append("")
-    txt.append("Summary:")
-    txt.append(summary)
-    txt.append("")
-    txt.append("Recommendations:")
-    txt.append(recommendations)
+    txt = "\n".join([
+        "Resume Screening Report",
+        f"Candidate: {name}",
+        f"Match Score: {match_pct}%",
+        "",
+        "Found Skills:",
+        *[f"- {s}" for s in found or ["None"]],
+        "",
+        "Missing Skills:",
+        *[f"- {s}" for s in missing or ["None"]],
+        "",
+        "Summary:",
+        summary,
+        "",
+        "Recommendations:",
+        recs
+    ])
+    return txt.encode("utf-8")
 
-    out_txt = "\n".join(txt)
-    return out_txt.encode("utf-8")
 
-# ------------------ Streamlit UI ------------------
-
+# ---------- UI ----------
 st.set_page_config(page_title="Resume Screener", layout="wide")
-st.title("Resume Screener — Robust (won't crash on missing libs)")
+st.title("Resume Screener - Where resumes meet precision.")
+st.write("AI-powered resume screening for faster, smarter hiring.")
 
-st.write("This app will attempt to extract text from uploaded resumes. If the deployment does not have a PDF reader installed, you can paste the resume text manually. The app never crashes on import.")
-
-# Show available readers for debugging (helpful)
-readers_info = ", ".join([f"{k}:{'✅' if v else '❌'}" for k, v in _pdf_readers.items()])
-st.caption(f"Detected PDF readers: {readers_info}  ·  docx support: {'✅' if _docx_available else '❌'}  ·  PDF writer (FPDF): {'✅' if _fpdf_available else '❌'}")
-
-st.sidebar.header("Job Description (you can edit)")
-sample_jd = """We are seeking a Data Entry Operator with strong typing skills and attention to detail.
-Responsibilities include typing and entering data, maintaining records in MS Word and Excel, internet research. Typing speed above 35 WPM."""
-jd = st.sidebar.text_area("Job description (JD)", value=sample_jd, height=200)
+st.sidebar.header("JOB DESCRIPTION")
+sample_jd = """We are seeking a Data Entry Operator with strong typing skills and attention to detail. Responsibilities include typing and entering data, maintaining records in MS Word and Excel, internet research. Typing speed above 35 WPM."""
+jd = st.sidebar.text_area("Paste your job description here", value=sample_jd, height=200)
 
 st.sidebar.markdown("**Upload** a single resume (PDF/DOCX/TXT) or paste the resume text below if extraction fails.")
 
@@ -269,78 +250,60 @@ with col1:
     uploaded = st.file_uploader("Upload resume (pdf / docx / txt)", type=["pdf", "docx", "txt"])
     manual_text = st.text_area("OR paste resume text here (plain text)", height=250)
 
-with col2:
-    st.write("Required skills checked (for this demo):")
-    st.write(", ".join(REQUIRED_SKILLS))
+# Remove "Required skills checked..." text completely
 
-# Decide how to obtain resume_text
 resume_text = ""
 extraction_warnings = []
 
 if uploaded:
     ext = uploaded.name.split(".")[-1].lower()
-    # Try to extract depending on file type
+
     if ext == "pdf":
         try:
             resume_text = extract_text_pdf_bytes(uploaded)
             if not resume_text.strip():
-                extraction_warnings.append("PDF extraction returned empty text — it might be a scanned image PDF.")
+                extraction_warnings.append("PDF extraction returned empty text.")
         except Exception as e:
-            extraction_warnings.append(f"PDF extraction failed: {e}")
+            extraction_warnings.append(str(e))
+
     elif ext == "docx":
         if _docx_available:
             try:
                 resume_text = extract_text_docx_bytes(uploaded)
-                if not resume_text.strip():
-                    extraction_warnings.append("DOCX extraction returned empty text.")
             except Exception as e:
-                extraction_warnings.append(f"DOCX extraction failed: {e}")
+                extraction_warnings.append(str(e))
         else:
-            extraction_warnings.append("DOCX support not available on this deployment.")
+            extraction_warnings.append("DOCX support not available.")
+
     elif ext == "txt":
         try:
             resume_text = extract_text_txt_bytes(uploaded)
         except Exception as e:
-            extraction_warnings.append(f"TXT read failed: {e}")
-    else:
-        extraction_warnings.append("Unsupported upload type.")
+            extraction_warnings.append(str(e))
 
-# If user pasted text, prefer that
-if manual_text and manual_text.strip():
+if manual_text.strip():
     resume_text = manual_text
 
 if not resume_text:
-    st.warning("No resume text available yet. Upload a PDF/DOCX/TXT or paste the resume into the box on the left.")
-    if extraction_warnings:
-        st.info("Extraction info: " + " | ".join(extraction_warnings))
+    st.warning("No resume text available yet. Upload or paste the resume text.")
 else:
-    # Process resume_text
     found, missing, match_pct = get_found_missing(resume_text)
+
     st.subheader("Screening Result")
     st.metric("Match Score", f"{match_pct}%")
     st.write("**Skills found:**", ", ".join(found) if found else "None")
     st.write("**Missing skills:**", ", ".join(missing) if missing else "None")
 
-    # Summaries & recs (simple)
-    summary = f"Candidate matched {match_pct}% of the listed required skills."
-    recs = "Recommendations: improve typing speed, MS Word and Excel proficiency, and time management."
+    summary = f"Candidate matched {match_pct}% of required skills."
+    recs = "Improve typing speed, MS Word, Excel, and time management."
 
-    # Create report bytes
     candidate_name = uploaded.name if uploaded else "pasted_resume"
     report_bytes = make_pdf_bytes(candidate_name, match_pct, found, missing, summary, recs)
 
-    # Download button with appropriate filename & mime
-    # If we produced a PDF, mime 'application/pdf'; else provide text fallback
     if _fpdf_available:
-        fname = f"screening_report_{candidate_name.rsplit('.',1)[0]}_{datetime.utcnow().strftime('%Y%m%d%H%M')}.pdf"
+        fname = f"screening_report_{datetime.utcnow().strftime('%Y%m%d%H%M')}.pdf"
         st.download_button("Download PDF Report", data=report_bytes, file_name=fname, mime="application/pdf")
     else:
-        fname = f"screening_report_{candidate_name.rsplit('.',1)[0]}_{datetime.utcnow().strftime('%Y%m%d%H%M')}.txt"
+        fname = f"screening_report_{datetime.utcnow().strftime('%Y%m%d%H%M')}.txt"
         st.download_button("Download Report (TXT)", data=report_bytes, file_name=fname, mime="text/plain")
-
-    if extraction_warnings:
-        st.info("Extraction notes: " + " | ".join(extraction_warnings))
-
-st.markdown("---")
-st.write("If you want a fully automated pipeline with OCR (scanned PDFs) or better keyword matching, add the required packages to your repo's `requirements.txt` and redeploy; I can provide the exact requirements list.")
 
