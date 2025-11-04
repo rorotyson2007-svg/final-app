@@ -1,5 +1,5 @@
 import streamlit as st
-import fitz  # PyMuPDF
+from PyPDF2 import PdfReader
 from fpdf import FPDF
 
 st.set_page_config(page_title="Resume Screener", layout="wide")
@@ -27,25 +27,23 @@ REQUIRED_SKILLS = [
     "detail oriented", "organized", "communication", "time management"
 ]
 
-def extract_text(uploaded_pdf):
+def extract_text_pdf(uploaded_pdf):
     text = ""
-    with fitz.open(stream=uploaded_pdf.read(), filetype="pdf") as doc:
-        for page in doc:
-            page_text = page.get_text()
-            if page_text:
-                text += page_text + "\n"
-    return text.lower()
+    reader = PdfReader(uploaded_pdf)
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text.lower() + "\n"
+    return text
 
 def match_skills(resume_text):
     found = []
     missing = []
-
     for skill in REQUIRED_SKILLS:
         if skill in resume_text:
             found.append(skill)
         else:
             missing.append(skill)
-
     match_pct = int((len(found) / len(REQUIRED_SKILLS)) * 100)
     return found, missing, match_pct
 
@@ -58,6 +56,7 @@ def create_pdf(name, match, found, missing, summary, recs):
     pdf.cell(0, 8, f"Match: {match}%", ln=1)
 
     pdf.ln(5)
+    pdf.set_font("Arial", size=11)
     pdf.cell(0, 8, "Skills Found:", ln=1)
     for s in found:
         pdf.cell(0, 8, f"- {s}", ln=1)
@@ -75,18 +74,18 @@ def create_pdf(name, match, found, missing, summary, recs):
 
     return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
-st.title("✅ Resume Screener (FINAL - Streamlit Compatible)")
+st.title("✅ Resume Screener (FINAL - No Errors)")
 
 uploaded = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
 
 if uploaded:
-    resume_text = extract_text(uploaded)
+    resume_text = extract_text_pdf(uploaded)
     found, missing, match = match_skills(resume_text)
 
     st.subheader("✅ Results")
     st.write(f"**Match: {match}%**")
-    st.write(f"✅ Found: {', '.join(found)}")
-    st.write(f"❌ Missing: {', '.join(missing)}")
+    st.write(f"✅ Found: {', '.join(found) if found else 'None'}")
+    st.write(f"❌ Missing: {', '.join(missing) if missing else 'None'}")
 
     summary = f"The candidate matches {match}% of required job skills."
     recs = "Improve MS Word, Excel, typing speed, and organizational skills."
