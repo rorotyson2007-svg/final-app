@@ -248,30 +248,21 @@ def make_pdf_bytes(candidate_name: str, match_pct: float, found, missing, summar
 # ------------------ Streamlit UI ------------------
 
 st.set_page_config(page_title="Resume Screener", layout="wide")
-st.title("Resume Screener — Robust (won't crash on missing libs)")
+st.title("Resume Screener — From resume to results , instantly.)")
 
-st.write("This app will attempt to extract text from uploaded resumes. If the deployment does not have a PDF reader installed, you can paste the resume text manually. The app never crashes on import.")
+st.write("AI-powered resume screening for faster, smarter hiring.")
 
-# Show available readers for debugging (helpful)
-readers_info = ", ".join([f"{k}:{'✅' if v else '❌'}" for k, v in _pdf_readers.items()])
-st.caption(f"Detected PDF readers: {readers_info}  ·  docx support: {'✅' if _docx_available else '❌'}  ·  PDF writer (FPDF): {'✅' if _fpdf_available else '❌'}")
 
-st.sidebar.header("Job Description (you can edit)")
-sample_jd = """We are seeking a Data Entry Operator with strong typing skills and attention to detail.
-Responsibilities include typing and entering data, maintaining records in MS Word and Excel, internet research. Typing speed above 35 WPM."""
-jd = st.sidebar.text_area("Job description (JD)", value=sample_jd, height=200)
+st.sidebar.header("Job Description")
+jd = st.sidebar.text_area("Paste your job description here.", value=sample_jd, height=200)
 
-st.sidebar.markdown("**Upload** a single resume (PDF/DOCX/TXT) or paste the resume text below if extraction fails.")
+st.sidebar.markdown("**Upload** a single resume (PDF/DOCX/TXT)")
 
 col1, col2 = st.columns([1, 1])
 
 with col1:
     uploaded = st.file_uploader("Upload resume (pdf / docx / txt)", type=["pdf", "docx", "txt"])
     manual_text = st.text_area("OR paste resume text here (plain text)", height=250)
-
-with col2:
-    st.write("Required skills checked (for this demo):")
-    st.write(", ".join(REQUIRED_SKILLS))
 
 # Decide how to obtain resume_text
 resume_text = ""
@@ -342,5 +333,3 @@ else:
         st.info("Extraction notes: " + " | ".join(extraction_warnings))
 
 st.markdown("---")
-st.write("If you want a fully automated pipeline with OCR (scanned PDFs) or better keyword matching, add the required packages to your repo's `requirements.txt` and redeploy; I can provide the exact requirements list.")
-
