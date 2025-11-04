@@ -1,5 +1,5 @@
 import streamlit as st
-from pypdf import PdfReader
+import fitz  # PyMuPDF
 from fpdf import FPDF
 
 st.set_page_config(page_title="Resume Screener", layout="wide")
@@ -27,13 +27,13 @@ REQUIRED_SKILLS = [
     "detail oriented", "organized", "communication", "time management"
 ]
 
-def extract_text_from_pdf(uploaded):
+def extract_text(uploaded_pdf):
     text = ""
-    reader = PdfReader(uploaded)
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text += page_text + "\n"
+    with fitz.open(stream=uploaded_pdf.read(), filetype="pdf") as doc:
+        for page in doc:
+            page_text = page.get_text()
+            if page_text:
+                text += page_text + "\n"
     return text.lower()
 
 def match_skills(resume_text):
@@ -49,22 +49,21 @@ def match_skills(resume_text):
     match_pct = int((len(found) / len(REQUIRED_SKILLS)) * 100)
     return found, missing, match_pct
 
-def create_pdf_report(name, match, found, missing, summary, recs):
+def create_pdf(name, match, found, missing, summary, recs):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=14)
-    pdf.cell(0, 10, f"Resume Screening Report - {name}", ln=1)
-
+    pdf.cell(0, 8, f"Resume Screening Report - {name}", ln=1)
     pdf.set_font("Arial", size=12)
-    pdf.cell(0, 10, f"Match Percentage: {match}%", ln=1)
+    pdf.cell(0, 8, f"Match: {match}%", ln=1)
 
     pdf.ln(5)
-    pdf.cell(0, 10, "Skills Found:", ln=1)
+    pdf.cell(0, 8, "Skills Found:", ln=1)
     for s in found:
         pdf.cell(0, 8, f"- {s}", ln=1)
 
     pdf.ln(5)
-    pdf.cell(0, 10, "Missing Skills:", ln=1)
+    pdf.cell(0, 8, "Missing Skills:", ln=1)
     for s in missing:
         pdf.cell(0, 8, f"- {s}", ln=1)
 
@@ -74,24 +73,25 @@ def create_pdf_report(name, match, found, missing, summary, recs):
     pdf.ln(5)
     pdf.multi_cell(0, 8, f"Recommendations:\n{recs}")
 
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
-st.title("✅ Resume Screener (Streamlit Safe Version)")
+st.title("✅ Resume Screener (FINAL - Streamlit Compatible)")
+
 uploaded = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
 
 if uploaded:
-    resume_text = extract_text_from_pdf(uploaded)
+    resume_text = extract_text(uploaded)
     found, missing, match = match_skills(resume_text)
 
-    st.subheader("✅ Match Result")
+    st.subheader("✅ Results")
     st.write(f"**Match: {match}%**")
     st.write(f"✅ Found: {', '.join(found)}")
     st.write(f"❌ Missing: {', '.join(missing)}")
 
-    summary = f"The candidate matches {match}% of the required skills."
-    recs = "Improve typing, MS Word, Excel, and organization skills to increase score."
+    summary = f"The candidate matches {match}% of required job skills."
+    recs = "Improve MS Word, Excel, typing speed, and organizational skills."
 
-    report = create_pdf_report("Candidate", match, found, missing, summary, recs)
+    report = create_pdf("Candidate", match, found, missing, summary, recs)
 
     st.download_button(
         "📥 Download PDF Report",
@@ -99,4 +99,6 @@ if uploaded:
         file_name="resume_report.pdf",
         mime="application/pdf"
     )
+else:
+    st.info("Upload a PDF resume to begin.")
 
